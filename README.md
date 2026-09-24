@@ -34,8 +34,7 @@ External readers never map the compute region. They receive a finished copy.
 | Determinism | Fixed-point `int32` positions (mm), `int64` accumulators, no float in the hot loop |
 | Operations | Soft deadlines with overrun counters; watchdog restarts stuck compute |
 
-Full contract: [`docs/DESIGN.md`](docs/DESIGN.md). Interview file map:
-[`docs/INTERVIEW.md`](docs/INTERVIEW.md).
+Full contract: [`docs/DESIGN.md`](docs/DESIGN.md).
 
 ## Quick start
 
@@ -84,7 +83,6 @@ Set `RATEHUB_PACE=0` to skip period sleeps (used by the test suite).
 | Path | Role |
 |------|------|
 | `docs/DESIGN.md` | System contract |
-| `docs/INTERVIEW.md` | Concept → file map for screens |
 | `include/ratehub/*.hpp` | Contracts in header comments |
 | `src/supervisor.cpp` | Process orchestration |
 | `src/compute.cpp` | Paced threads + watchdog |
