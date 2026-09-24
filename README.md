@@ -1,8 +1,9 @@
 # ratehub
 
-Multi-process telemetry concentrator in C++20. Four POSIX processes share one
+Multi-process telemetry concentrator in C++20. Five POSIX processes share one
 memory mapping. The hot path uses no locks and no heap allocation: an SPSC
-ring, per-source seqlocks, and a triple-buffered fleet snapshot.
+ring, per-source seqlocks, and a triple-buffered fleet snapshot. A fifth
+read-only process streams that mapping to a local browser dashboard.
 
 Production background behind the author is **C** on hard real-time avionics.
 This repository is a **personal** systems project. C++ owns resources; the hot
@@ -19,6 +20,7 @@ replay file
     → publish (copy consistent snapshot to a file)
     ↑
 supervisor (spawn, heartbeat, restart compute, cooperative shutdown)
+observe (read-only) → HTTP SSE → browser dashboard
 ```
 
 External readers never map the compute region. They receive a finished copy.
@@ -47,6 +49,14 @@ cmake --build build --target make_replay
 ./build/make_replay replay.bin
 ./build/ratehub run replay.bin snapshot.txt
 cat snapshot.txt
+```
+
+Live dashboard (paced ingest, eight moving sources). After the run, **Run again** on the page replays; Ctrl+C stops:
+
+```bash
+./build/make_replay demo.bin --demo
+./build/ratehub run demo.bin snapshot.txt --observe-port 8080
+# open http://127.0.0.1:8080/
 ```
 
 Expected output after two 5 ms integration steps at 2000 mm/s:
@@ -85,7 +95,9 @@ Set `RATEHUB_PACE=0` to skip period sleeps (used by the test suite).
 | `docs/DESIGN.md` | System contract |
 | `include/ratehub/*.hpp` | Contracts in header comments |
 | `src/supervisor.cpp` | Process orchestration |
+| `src/observe.cpp` | Read-only SSE dashboard |
 | `src/compute.cpp` | Paced threads + watchdog |
+| `web/dashboard.html` | Browser observer UI |
 | `src/bench.cpp` | Cache hierarchy measurements |
 
 Each header comment block states who may call the type, what failure leaves

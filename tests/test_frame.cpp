@@ -1,4 +1,5 @@
 #include "ratehub/frame.hpp"
+#include "ratehub/layout.hpp"
 #include "ratehub/shm_control.hpp"
 
 #include <cstdio>
@@ -50,5 +51,11 @@ int test_frame() {
     expect(control.magic == ratehub::kShmMagic, "shm magic");
     expect(control.schema == ratehub::kSchemaVersion, "shm schema");
     expect(control.generation.load(std::memory_order_relaxed) == 1u, "generation starts at 1");
+    expect(ratehub::kSchemaVersion == 3, "schema v3");
+    ratehub::Layout layout;
+    expect(layout.supervisor.ingest_pid.load(std::memory_order_relaxed) == 0u, "supervisor block zeroed");
+    ratehub::request_rerun(layout.supervisor);
+    expect(ratehub::take_rerun(layout.supervisor), "rerun latched");
+    expect(!ratehub::take_rerun(layout.supervisor), "rerun consumed");
     return g_failed;
 }

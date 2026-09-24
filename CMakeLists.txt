@@ -13,6 +13,9 @@ add_library(ratehub STATIC
     src/compute.cpp
     src/publish.cpp
     src/supervisor.cpp
+    src/telemetry.cpp
+    src/http_sse.cpp
+    src/observe.cpp
 )
 target_include_directories(ratehub PUBLIC include)
 target_compile_options(ratehub PRIVATE -Wall -Wextra -Werror -Wpedantic)
@@ -37,6 +40,8 @@ add_executable(ratehub_tests
     tests/test_publish.cpp
     tests/test_system.cpp
     tests/test_pace.cpp
+    tests/test_telemetry.cpp
+    tests/test_http_sse.cpp
 )
 target_link_libraries(ratehub_tests PRIVATE ratehub)
 target_compile_options(ratehub_tests PRIVATE -Wall -Wextra -Werror -Wpedantic)
@@ -47,6 +52,11 @@ target_link_libraries(ratehub PUBLIC Threads::Threads)
 if(NOT APPLE)
     target_link_libraries(ratehub PUBLIC rt)
 endif()
+
+add_custom_target(ratehub_web ALL
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/web ${CMAKE_BINARY_DIR}/web
+)
+add_dependencies(ratehub_cli ratehub_web)
 
 set(RATEHUB_SANITIZER "" CACHE STRING "address, undefined, or thread")
 if(RATEHUB_SANITIZER STREQUAL "address")

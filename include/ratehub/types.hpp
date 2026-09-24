@@ -18,7 +18,8 @@ constexpr std::uint32_t kMaxSources = 64;
 // comment. decode_frame rejects any other value.
 // 2: per-rate heartbeats and overrun counters in the shared control block.
 // The 38-byte frame layout did not change.
-constexpr std::uint16_t kSchemaVersion = 2;
+// 3: SupervisorState (PIDs, exits, observe_release) after the control block.
+constexpr std::uint16_t kSchemaVersion = 3;
 
 // Chosen so a hex dump is obvious and does not collide with a zeroed buffer.
 constexpr std::uint16_t kFrameMagic = 0xA15C;

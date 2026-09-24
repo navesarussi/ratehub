@@ -14,6 +14,7 @@
 #include "ratehub/seqlock.hpp"
 #include "ratehub/shm_control.hpp"
 #include "ratehub/spsc_ring.hpp"
+#include "ratehub/supervisor_state.hpp"
 #include "ratehub/triple_buffer.hpp"
 #include "ratehub/types.hpp"
 
@@ -48,6 +49,7 @@ inline constexpr std::uint32_t kRingCapacity = 1024;
 
 struct alignas(64) Layout {
     ShmControl control;
+    alignas(64) SupervisorState supervisor;
     alignas(64) SpscRing<Record, kRingCapacity> ring;
     alignas(64) Seqlock<SourceState> latest[kMaxSources];
     alignas(64) Seqlock<WindowState> window[kMaxSources];

@@ -2,10 +2,12 @@
 
 #include "ratehub/bounded_queue.hpp"
 #include "ratehub/frame.hpp"
+#include "ratehub/pace.hpp"
 #include "ratehub/shm_region.hpp"
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <fstream>
 #include <thread>
 
@@ -45,6 +47,9 @@ int run_ingest(const char* shm_name, const char* replay_path) {
                 break;
             }
             layout.control.heartbeat_ingest.store(++beats, std::memory_order_release);
+            if (pacing_enabled()) {
+                std::this_thread::sleep_for(std::chrono::nanoseconds(kFastPeriodNs));
+            }
         }
         queue.close();
     });

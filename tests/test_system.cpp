@@ -2,6 +2,7 @@
 #include "ratehub/roles.hpp"
 #include "ratehub/shm_region.hpp"
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -59,6 +60,11 @@ int test_system() {
     expect(line == "generation 1", "generation 1");
     std::getline(in, line);
     expect(line == "1 1020 0 2", "two steps land at 1020 mm");
+
+    const std::uint16_t observe_port = static_cast<std::uint16_t>(18080 + (::getpid() % 1000));
+    const std::string observed = snapshot + ".obs";
+    expect(ratehub::run_supervisor(RATEHUB_BIN, replay.c_str(), observed.c_str(), observe_port) == 0,
+           "supervisor with observe port");
 
     setenv("RATEHUB_CRASH", "once", 1);
     const std::string crashed = snapshot + ".crash";

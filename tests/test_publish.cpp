@@ -27,6 +27,13 @@ int test_publish() {
     expect(ring.try_push(3) && ring.try_push(4), "ring fill");
     expect(!ring.try_push(5), "ring full");
 
+    ratehub::SpscRing<int, 4> ring2;
+    expect(ring2.occupied() == 0, "empty ring");
+    expect(ring2.try_push(1), "push one");
+    expect(ring2.occupied() == 1, "one item");
+    expect(ring2.try_push(2) && ring2.try_push(3), "fill ring");
+    expect(ring2.occupied() == 3, "full ring capacity-1");
+
     ratehub::Seqlock<std::uint64_t> slot;
     slot.publish(0x1122334455667788ULL);
     std::uint64_t got = 0;

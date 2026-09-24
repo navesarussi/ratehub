@@ -8,17 +8,21 @@ This document is the contract. Code that disagrees with it is a bug.
 
 ## Process model
 
-Four processes. The supervisor is the parent and is single-threaded on purpose.
+Five processes. The supervisor is the parent and is single-threaded on purpose.
 A second thread there adds shutdown races and does not buy throughput.
 
 | Process | Threads | Role |
 |---|---|---|
-| Supervisor | 1 | Create the shared mapping, spawn children, read heartbeats, translate a signal into a cooperative shutdown flag, restart a dead child up to a fixed limit |
-| Ingest | 2 | Source thread reads bytes. Frame thread validates and decodes. A bounded mutex queue sits between them |
+| Supervisor | 1 | Create the shared mapping, spawn children, read heartbeats, translate a signal into a cooperative shutdown flag, restart a dead child up to a fixed limit. Optionally spawn observe and hold the mapping until Ctrl+C |
+| Ingest | 2 | Source thread reads bytes. Frame thread validates and decodes. A bounded mutex queue sits between them. When pacing is on, the source thread sleeps one fast period after each queued frame |
 | Compute | 4 | 5 ms fast path, 25 ms window, 100 ms snapshot, watchdog |
 | Publish | 2 | Observe a consistent snapshot, hand a finished copy to external readers |
+| Observe | 1 | Read-only attach. Sample control atomics, ring occupancy, and window seqlocks. Serve a local HTTP dashboard over SSE |
 
 External readers never map the compute region. They receive a finished copy.
+The observer process is not an external reader: it is a sibling that maps the
+same region read-only so a dashboard can display the live control block and
+window seqlocks without joining the hot path.
 A slow reader cannot stall the writer.
 
 The first source is a replay file so a run is deterministic. The source thread
@@ -35,6 +39,16 @@ One object, three regions, with a schema version in the header:
    continuation of the old ring.
 
 A schema mismatch refuses to start.
+
+Schema 3 adds `SupervisorState` immediately after the control block: child PIDs, exit codes, and `observe_release` for the observer process. The observer acquire-loads that block. It does not store to it.
+
+## Observer
+
+The fifth process maps the region and never writes `Layout`. It binds `127.0.0.1`, serves `web/dashboard.html`, and pushes one JSON object per tick on `GET /events` as Server-Sent Events. Live positions come from the 25 ms window seqlocks. The triple-buffer snapshot is still published once at the end of compute, so the dashboard does not wait for it.
+
+`ratehub run replay.bin snapshot.txt --observe-port 8080` spawns observe. After ingest, compute, and publish exit, and while pacing is on, the supervisor keeps the mapping until SIGINT. The dashboard `Run again` button POSTs `/reset`; the observer stores `rerun_request` and the supervisor starts another pipeline on the same mapping. Tests set `RATEHUB_PACE=0` and skip that hold.
+
+The observer is not on the hot path. It may poll, sleep, and format JSON. Ingest, compute, and publish do not open sockets.
 
 ## Data flow
 
@@ -115,7 +129,8 @@ invent a fresh sample.
   complete snapshots), a blocked producer that wakes on shutdown.
 - Process tests: schema mismatch refuses to start, a dead child bumps the
   generation, exceeding the restart limit exits non-zero, a replay file
-  yields an expected snapshot.
+  yields an expected snapshot. Observer: telemetry JSON, one SSE frame on
+  localhost, supervisor `--observe-port` still exits when pacing is off.
 
 CI runs AddressSanitizer and UndefinedBehaviorSanitizer in one build, and
 ThreadSanitizer in another. They are not combined. Benchmarks are not a gate.
@@ -130,16 +145,17 @@ and that this repository is a personal C++ systems project.
 
 Implemented and tested: wire frame, fixed-point integration, SPSC ring,
 seqlock, triple buffer, blocking queue, shared mapping, ingest, compute,
-publish, and the supervisor. A replay of two records produces position
-1020 mm and publish count 2. A schema mismatch refuses to attach. One
-compute crash restarts and bumps the generation. A third crash exits
-non-zero.
+publish, supervisor, and a read-only observer that serves a live dashboard
+over SSE. A replay of two records produces position 1020 mm and publish
+count 2. A schema mismatch refuses to attach. One compute crash restarts
+and bumps the generation. A third crash exits non-zero.
 
 Each rate thread beats a steady-clock timestamp on its own cache line, does
 its work, then sleeps the rest of its period. Work past the period increments
 `overrun_fast`, `overrun_window`, or `overrun_snapshot` and does not sleep.
 A watchdog thread in compute reads those beats. Silence longer than four
-periods, on a stage that has not finished, sets `fault`. The compute process
+periods, floored at 200 ms so a host OS with an observer still attached is
+not treated as a stuck stage, sets `fault`. The compute process
 then exits 3 and the supervisor restarts it. A beat of 0 is startup, not a
 stall. `RATEHUB_PACE=0` skips the sleep so the replay test does not depend
 on the wall clock. The 5 ms constant is still the integrator step.

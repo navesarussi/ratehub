@@ -48,6 +48,12 @@ std::uint64_t now_ns() {
                                            .count());
 }
 
+std::uint64_t stall_limit_ns(std::int64_t period_ns) {
+    const std::uint64_t four = static_cast<std::uint64_t>(4 * period_ns);
+    constexpr std::uint64_t kFloorNs = 200'000'000;
+    return four > kFloorNs ? four : kFloorNs;
+}
+
 void beat(std::atomic<std::uint64_t>& slot) {
     slot.store(now_ns(), std::memory_order_release);
 }
@@ -164,11 +170,11 @@ int run_compute(const char* shm_name) {
             const bool fast_done = layout.control.fast_done.load(std::memory_order_acquire) != 0;
             const bool window_done = layout.control.window_done.load(std::memory_order_acquire) != 0;
             const bool late_fast = heartbeat_stalled(now, layout.control.heartbeat_fast.load(std::memory_order_acquire),
-                                                      static_cast<std::uint64_t>(4 * kFastPeriodNs), fast_done);
+                                                      stall_limit_ns(kFastPeriodNs), fast_done);
             const bool late_window = heartbeat_stalled(now, layout.control.heartbeat_window.load(std::memory_order_acquire),
-                                                        static_cast<std::uint64_t>(4 * kWindowPeriodNs), window_done);
+                                                        stall_limit_ns(kWindowPeriodNs), window_done);
             const bool late_snapshot = heartbeat_stalled(now, layout.control.heartbeat_snapshot.load(std::memory_order_acquire),
-                                                          static_cast<std::uint64_t>(4 * kSnapshotPeriodNs), false);
+                                                          stall_limit_ns(kSnapshotPeriodNs), false);
             if (late_fast || late_window || late_snapshot) {
                 layout.control.fault.store(1, std::memory_order_release);
             }

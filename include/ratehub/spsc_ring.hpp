@@ -71,6 +71,14 @@ public:
         return true;
     }
 
+    // Number of records waiting for the consumer. Observer may call this.
+    // Acquire-loads both indexes. Not for the producer hot path.
+    std::uint32_t occupied() const noexcept {
+        const std::uint32_t write = write_.load(std::memory_order_acquire);
+        const std::uint32_t read = read_.load(std::memory_order_acquire);
+        return (write - read) & kMask;
+    }
+
 private:
     static constexpr std::uint32_t kMask = Capacity - 1;
 

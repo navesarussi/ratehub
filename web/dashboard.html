@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>ratehub observer</title>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #121821;
+      --line: #1e2a38;
+      --text: #d7e3ef;
+      --muted: #7f93a8;
+      --ok: #3dd68c;
+      --idle: #8b9cb0;
+      --stale: #e6b450;
+      --fault: #ff6b6b;
+      --accent: #5cc8ff;
+      --ring: #2ee6c7;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+      font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    header { display: flex; align-items: center; gap: 16px; padding: 16px 20px 8px;
+      border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+    h1 { font-size: 16px; letter-spacing: 0.12em; text-transform: uppercase; margin: 0; color: var(--accent); }
+    #reset { margin-left: auto; background: #0e141c; color: var(--accent); border: 1px solid var(--accent);
+      border-radius: 8px; padding: 6px 14px; font: inherit; cursor: pointer; letter-spacing: 0.06em; }
+    #reset:hover { background: #17202b; }
+    #reset:disabled { opacity: 0.45; cursor: default; }
+    .badge { padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; font-size: 11px; }
+    .badge.live { color: var(--ok); border-color: var(--ok); }
+    .badge.idle { color: var(--idle); }
+    .badge.fault { color: var(--fault); border-color: var(--fault); }
+    .meta { color: var(--muted); }
+    main { display: grid; grid-template-columns: 1.2fr 1fr; gap: 12px; padding: 12px 20px 20px; }
+    .span2 { grid-column: 1 / -1; }
+    section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+    h2 { margin: 0 0 10px; font-size: 11px; color: var(--muted); letter-spacing: 0.14em; text-transform: uppercase; }
+    .pipe { display: flex; gap: 8px; flex-wrap: wrap; align-items: stretch; }
+    .node { flex: 1; min-width: 110px; border: 1px solid var(--line); border-radius: 8px; padding: 8px;
+      background: #0e141c; }
+    .node .name { color: var(--muted); font-size: 11px; }
+    .node .val { font-size: 13px; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .node.ok { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ok) 45%, transparent); }
+    .node.stale { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--stale) 55%, transparent); }
+    .node.idle { opacity: 0.7; }
+    .node.fault { box-shadow: inset 0 0 0 1px var(--fault); }
+    .bar { height: 14px; background: #0e141c; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+    .bar > div { height: 100%; width: 0; background: linear-gradient(90deg, var(--ring), var(--accent)); }
+    .nums { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .num { background: #0e141c; border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+    .num .k { color: var(--muted); font-size: 11px; }
+    .num .v { font-size: 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: right; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+    th:first-child, td:first-child { text-align: left; }
+    th { color: var(--muted); font-weight: 500; }
+    canvas { width: 100%; background: #0e141c; border-radius: 8px; border: 1px solid var(--line); }
+    #sparks { height: 120px; }
+    #fleet { height: 280px; }
+    @media (max-width: 900px) { main { grid-template-columns: 1fr; } .span2 { grid-column: auto; } .nums { grid-template-columns: repeat(2, 1fr); } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>ratehub</h1>
+    <span id="badge" class="badge">connecting</span>
+    <span class="meta">generation <span id="gen">–</span></span>
+    <span class="meta">schema 3</span>
+    <span class="meta" id="conn"></span>
+    <button id="reset" type="button">Run again</button>
+  </header>
+  <main>
+    <section class="span2">
+      <h2>pipeline</h2>
+      <div class="pipe" id="pipe"></div>
+    </section>
+    <section>
+      <h2>ring <span id="ringLabel">0/0</span></h2>
+      <div class="bar"><div id="ringFill"></div></div>
+    </section>
+    <section>
+      <h2>overruns</h2>
+      <div class="nums" id="overruns"></div>
+    </section>
+    <section>
+      <h2>heartbeats</h2>
+      <canvas id="sparks" width="640" height="120"></canvas>
+    </section>
+    <section>
+      <h2>process</h2>
+      <div class="nums" id="procs"></div>
+    </section>
+    <section>
+      <h2>fleet</h2>
+      <canvas id="fleet" width="640" height="280"></canvas>
+    </section>
+    <section>
+      <h2>sources</h2>
+      <table>
+        <thead><tr><th>id</th><th>x mm</th><th>y mm</th><th>seq</th><th>publishes</th></tr></thead>
+        <tbody id="srcBody"></tbody>
+      </table>
+    </section>
+  </main>
+  <script>
+    const hbKeys = ["ingest", "compute", "publish", "fast", "window", "snapshot"];
+    const history = {};
+    hbKeys.forEach((k) => { history[k] = []; });
+    const trails = new Map();
+    let lastHb = {};
+    let stale = {};
+    let ticksUnchanged = {};
+
+    function pushHist(key, value) {
+      const arr = history[key];
+      arr.push(Number(value) || 0);
+      if (arr.length > 80) arr.shift();
+    }
+
+    function nodeClass(name, snap) {
+      if (snap.fault && (name === "compute" || name === "fast" || name === "window" || name === "snapshot")) return "fault";
+      if (snap.idle) return "idle";
+      if (stale[name]) return "stale";
+      return "ok";
+    }
+
+    function fmt(n) { return n == null ? "–" : String(n); }
+
+    function fmtHb(name, v, snap) {
+      if (v == null) return "–";
+      if (name === "fast" || name === "window" || name === "snapshot") {
+        if (!v) return "–";
+        const age = Math.max(0, Math.round((Number(snap.ts_ns) - Number(v)) / 1e6));
+        return age + " ms ago";
+      }
+      return fmt(v);
+    }
+
+    function renderPipe(snap) {
+        const stages = [
+        ["ingest", snap.pids.ingest, snap.hb.ingest, snap.done.ingest],
+        ["ring", snap.ring.occupied, snap.ring.occupied + "/" + snap.ring.capacity, 0],
+        ["fast", snap.pids.compute, snap.hb.fast, snap.done.fast],
+        ["window", snap.pids.compute, snap.hb.window, snap.done.window],
+        ["snapshot", snap.pids.compute, snap.hb.snapshot, snap.done.snapshot],
+        ["publish", snap.pids.publish, snap.hb.publish, snap.done.compute],
+        ["observe", snap.pids.observe, "sse", 0]
+      ];
+      document.getElementById("pipe").innerHTML = stages.map(([name, pid, val]) =>
+        `<div class="node ${nodeClass(name, snap)}"><div class="name">${name}${pid ? " · " + pid : ""}</div><div class="val">${fmtHb(name, val, snap)}</div></div>`
+      ).join("");
+    }
+
+    function renderNums(id, rows) {
+      document.getElementById(id).innerHTML = rows.map(([k, v]) =>
+        `<div class="num"><div class="k">${k}</div><div class="v">${fmt(v)}</div></div>`
+      ).join("");
+    }
+
+    function drawSparks() {
+      const c = document.getElementById("sparks");
+      const ctx = c.getContext("2d");
+      const w = c.width, h = c.height;
+      ctx.clearRect(0, 0, w, h);
+      const colors = ["#5cc8ff", "#3dd68c", "#e6b450", "#2ee6c7", "#c792ea", "#ff6b6b"];
+      hbKeys.forEach((key, i) => {
+        const arr = history[key];
+        if (arr.length < 2) return;
+        const min = Math.min(...arr);
+        const max = Math.max(...arr);
+        const span = Math.max(1, max - min);
+        ctx.beginPath();
+        ctx.strokeStyle = colors[i];
+        ctx.lineWidth = 1.4;
+        arr.forEach((v, x) => {
+          const px = (x / (arr.length - 1)) * (w - 8) + 4;
+          const py = h - 8 - ((v - min) / span) * (h - 16);
+          if (x === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        });
+        ctx.stroke();
+      });
+    }
+
+    function drawFleet(sources) {
+      const c = document.getElementById("fleet");
+      const ctx = c.getContext("2d");
+      const w = c.width, h = c.height;
+      ctx.clearRect(0, 0, w, h);
+      ctx.strokeStyle = "#1e2a38";
+      ctx.beginPath();
+      ctx.moveTo(w / 2, 0); ctx.lineTo(w / 2, h);
+      ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2);
+      ctx.stroke();
+      let minX = -1, maxX = 1, minY = -1, maxY = 1;
+      sources.forEach((s) => {
+        minX = Math.min(minX, s.x); maxX = Math.max(maxX, s.x);
+        minY = Math.min(minY, s.y); maxY = Math.max(maxY, s.y);
+        if (!trails.has(s.id)) trails.set(s.id, []);
+        const t = trails.get(s.id);
+        t.push({ x: s.x, y: s.y });
+        if (t.length > 40) t.shift();
+      });
+      const pad = 40;
+      const sx = (x) => pad + ((x - minX) / Math.max(1, maxX - minX)) * (w - pad * 2);
+      const sy = (y) => h - pad - ((y - minY) / Math.max(1, maxY - minY)) * (h - pad * 2);
+      sources.forEach((s, i) => {
+        const trail = trails.get(s.id) || [];
+        ctx.beginPath();
+        ctx.strokeStyle = `hsla(${(i * 47) % 360} 80% 65% / 0.55)`;
+        trail.forEach((p, idx) => {
+          const x = sx(p.x), y = sy(p.y);
+          if (idx === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        ctx.fillStyle = `hsl(${(i * 47) % 360} 80% 65%)`;
+        ctx.beginPath();
+        ctx.arc(sx(s.x), sy(s.y), 5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#d7e3ef";
+        ctx.fillText(String(s.id), sx(s.x) + 8, sy(s.y) - 8);
+      });
+    }
+
+    function update(snap) {
+      hbKeys.forEach((k) => {
+        const v = snap.hb[k];
+        pushHist(k, v);
+        if (lastHb[k] === v) ticksUnchanged[k] = (ticksUnchanged[k] || 0) + 1;
+        else ticksUnchanged[k] = 0;
+        lastHb[k] = v;
+        const doneKey = k === "ingest" || k === "compute" || k === "publish" ? (k === "publish" ? "compute" : k) : k;
+        const done = snap.done[doneKey] || snap.idle;
+        stale[k] = !done && ticksUnchanged[k] > 20;
+      });
+      stale.ring = false;
+      stale.observe = false;
+      const badge = document.getElementById("badge");
+      badge.className = "badge " + (snap.fault ? "fault" : snap.idle ? "idle" : "live");
+      badge.textContent = snap.fault ? "fault" : snap.idle ? "idle" : "live";
+      document.getElementById("gen").textContent = snap.generation;
+      document.getElementById("ringLabel").textContent = snap.ring.occupied + "/" + snap.ring.capacity;
+      document.getElementById("ringFill").style.width =
+        (100 * snap.ring.occupied / Math.max(1, snap.ring.capacity)) + "%";
+      renderPipe(snap);
+      renderNums("overruns", [
+        ["fast", snap.overrun.fast],
+        ["window", snap.overrun.window],
+        ["snapshot", snap.overrun.snapshot],
+        ["fault", snap.fault]
+      ]);
+      renderNums("procs", [
+        ["ingest pid", snap.pids.ingest],
+        ["compute pid", snap.pids.compute],
+        ["publish pid", snap.pids.publish],
+        ["observe pid", snap.pids.observe],
+        ["ingest exit", snap.exits.ingest],
+        ["compute exit", snap.exits.compute],
+        ["publish exit", snap.exits.publish],
+        ["idle", snap.idle]
+      ]);
+      const body = document.getElementById("srcBody");
+      body.innerHTML = (snap.sources || []).map((s) =>
+        `<tr><td>${s.id}</td><td>${s.x}</td><td>${s.y}</td><td>${s.seq}</td><td>${s.p}</td></tr>`
+      ).join("") || `<tr><td colspan="5">no published sources</td></tr>`;
+      drawSparks();
+      drawFleet(snap.sources || []);
+    }
+
+    function clearUi() {
+      hbKeys.forEach((k) => { history[k] = []; });
+      trails.clear();
+      lastHb = {};
+      stale = {};
+      ticksUnchanged = {};
+    }
+
+    document.getElementById("reset").onclick = async () => {
+      const btn = document.getElementById("reset");
+      btn.disabled = true;
+      clearUi();
+      try {
+        const res = await fetch("/reset", { method: "POST" });
+        if (!res.ok) {
+          document.getElementById("conn").textContent = "reset failed";
+        } else {
+          document.getElementById("conn").textContent = "rerun";
+        }
+      } catch (err) {
+        document.getElementById("conn").textContent = "reset failed";
+      }
+      window.setTimeout(() => { btn.disabled = false; }, 800);
+    };
+
+    const es = new EventSource("/events");
+    es.onopen = () => { document.getElementById("conn").textContent = "sse open"; };
+    es.onerror = () => { document.getElementById("conn").textContent = "sse retry"; };
+    es.onmessage = (e) => {
+      document.getElementById("conn").textContent = "sse";
+      update(JSON.parse(e.data));
+    };
+  </script>
+</body>
+</html>
