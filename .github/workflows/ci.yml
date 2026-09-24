@@ -1,0 +1,22 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  asan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build -DRATEHUB_SANITIZER=address
+      - run: cmake --build build
+      - run: ./build/ratehub_tests
+
+  tsan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build-tsan -DRATEHUB_SANITIZER=thread
+      - run: cmake --build build-tsan
+      - run: ./build-tsan/ratehub_tests
