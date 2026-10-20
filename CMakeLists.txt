@@ -64,5 +64,11 @@ if(RATEHUB_SANITIZER STREQUAL "address")
     target_link_options(ratehub PUBLIC -fsanitize=address,undefined)
 elseif(RATEHUB_SANITIZER STREQUAL "thread")
     target_compile_options(ratehub PUBLIC -fsanitize=thread -fno-omit-frame-pointer)
+    # GCC 12+ warns (-Wtsan) that TSan does not model std::atomic_thread_fence.
+    # Keep the TSan build compiling under -Werror; fence-based ordering is not
+    # checked by TSan, which is a known limitation.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 12)
+        target_compile_options(ratehub PUBLIC -Wno-tsan)
+    endif()
     target_link_options(ratehub PUBLIC -fsanitize=thread)
 endif()
