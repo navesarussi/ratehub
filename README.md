@@ -110,5 +110,4 @@ GitHub Actions runs ASan+UBSan and TSan on Ubuntu. See
 
 ## License
 
-MIT — see repository license file if present; otherwise treat as portfolio
-code for review in interviews.
+MIT — see [`LICENSE`](LICENSE).

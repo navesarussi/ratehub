@@ -3,3 +3,4 @@ build-tsan/
 .DS_Store
 *.bin
 snapshot.txt
+docs/superpowers/
